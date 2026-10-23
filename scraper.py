@@ -6,7 +6,6 @@ from datetime import datetime
 
 TARGET_TEAMS = ["Skuru IK 4", "Skuru IK 2", "Skuru IK 1"]
 
-# Fullständiga och direkta spelschemalänkar som tvingar Profixio att visa SPELADE matcher direkt
 FIXED_URLS = [
     {"namn": "Skuru IK 4", "url": "https://profixio.com"},
     {"namn": "Skuru IK 2", "url": "https://profixio.com"},
@@ -16,24 +15,21 @@ FIXED_URLS = [
 async def scrape_to_html_direct():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        # Tvinga svenskt språk och zon i webbläsar-kontexten
         context = await browser.new_context(locale="sv-SE", timezone_id="Europe/Stockholm")
         page = await context.new_page()
         
         stats_master = {team: {} for team in TARGET_TEAMS}
 
-        print("--- Steg 1: Skrapar matcher från de verifierade länkarna ---")
+        print("--- Steg 1: Öppnar spelscheman ---")
         for team in FIXED_URLS:
             try:
                 print(f"Öppnar spelschema för {team['namn']}...")
                 await page.goto(team["url"])
-                # Ge sidan ordentligt med tid att ladda in JavaScript-elementen fullt ut
-                await page.wait_for_timeout(7000)
+                await page.wait_for_timeout(6000)
                 
-                # Bred sökning efter alla matchlänkar/ikoner oavsett textinnehåll
+                # Hitta alla länkar till matcherna
                 match_links = await page.locator("a[href*='/match/'], a[href*='matchid'], a:has-text('Matchinfo'), a:has-text('Live')").all()
                 
-                # Sortera bort dubblett-länkar
                 seen_hrefs = set()
                 valid_buttons = []
                 for link in match_links:
@@ -53,42 +49,50 @@ async def scrape_to_html_direct():
                         await popup.wait_for_load_state("networkidle")
                         await popup.wait_for_timeout(5000)
 
-                        # Hämta ut all synlig text från matchbladet
-                        full_page_text = await popup.evaluate("() => document.body.innerText")
-                        lines = full_page_text.split("\n")
-                        
-                        for line in lines:
-                            line = line.strip()
-                            if not line or len(line) < 4:
+                        # Ny bombsäker cellskrapning: Vi letar efter ALLA tabellrader inuti matchen
+                        rows = await popup.locator("table tr").all()
+                        for row in rows:
+                            cells = await row.locator("td").all_text_contents()
+                            if len(cells) < 2:
                                 continue
                             
-                            # Matchar mönster som "9 Spelarnamn Spelarkvist 4" eller "Spelarnamn 3" i slutet av en rad
-                            player_match = re.search(r'(?:\d+\s+)?([A-ZÅÄÖa-zåäö][-A-ZÅÄÖa-zåäö\s]+?)\s+(\d+)\s*$', line)
-                            if player_match:
-                                name = player_match.group(1).strip()
-                                goals = int(player_match.group(2))
+                            # Rensa cellerna från tomrum
+                            cells = [c.strip() for c in cells]
+                            
+                            # Hitta vilken cell som innehåller namnet (ofta cell index 1 eller 2)
+                            name = ""
+                            goals = 0
+                            penalties = 0
+                            
+                            for c in cells:
+                                # Om cellen innehåller bokstäver och är längre än 5 tecken, är det namnet
+                                if re.match(r'^[A-ZÅÄÖa-zåäö][-A-ZÅÄÖa-zåäö\s]+$', c) and len(c) > 5:
+                                    if c not in ["Matchinfo", "Resultat", "Domare", "Ledare", "Spelare", "Mål", "Lag", "Slutresultat", "Hemma", "Borta"]:
+                                        name = c
+                                        break
+                            
+                            if not name:
+                                continue
                                 
-                                # Filtrera bort gränssnittstext
-                                if name in ["Matchinfo", "Resultat", "Domare", "Ledare", "Spelare", "Mål", "Lag", "Slutresultat", "Hemma", "Borta", "Period"] or len(name) < 5:
-                                    continue
-                                
-                                if name not in stats_master[team['namn']]:
-                                    stats_master[team['namn']][name] = {"Spelarnamn": name, "Matcher": 0, "Mål": 0, "Utvisningar": 0}
-                                
-                                stats_master[team['namn']][name]["Matcher"] += 1
-                                stats_master[team['namn']][name]["Mål"] += goals
+                            # Sök efter mål i radens alla celler (letar efter en ren siffra som inte är tröjnumret)
+                            for c in cells:
+                                if c.isdigit() and c != cells[0]: # Tröjnumret ligger nästan alltid först
+                                    goals = int(c)
+                                if "2'" in c or "2-min" in c:
+                                    penalties += c.count("2'")
 
-                            # Detektera 2-minutersutvisningar
-                            if "2'" in line or "2-min" in line:
-                                for r_name in stats_master[team['namn']]:
-                                    if r_name.lower() in line.lower():
-                                        stats_master[team['namn']][r_name]["Utvisningar"] += 1
+                            if name not in stats_master[team['namn']]:
+                                stats_master[team['namn']][name] = {"Spelarnamn": name, "Matcher": 0, "Mål": 0, "Utvisningar": 0}
+                            
+                            stats_master[team['namn']][name]["Matcher"] += 1
+                            stats_master[team['namn']][name]["Mål"] += goals
+                            stats_master[team['namn']][name]["Utvisningar"] += penalties
                                         
                         await popup.close()
                     except Exception as match_error:
                         print(f"    Kunde inte läsa enskild match {idx}: {match_error}")
             except Exception as e:
-                print(f"  Allvarligt fel vid skrapning av {team['namn']}: {e}")
+                print(f"  Fel vid skrapning av {team['namn']}: {e}")
 
         await browser.close()
 
