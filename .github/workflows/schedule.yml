@@ -9,9 +9,9 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pages: write      # Ger rättighet att uppdatera hemsidan live
-      id-token: write   # Krävs för modern publicering
+      contents: read    # Behöver bara läsa källkoden
+      pages: write      # Krävs för att starta pages build and deployment live
+      id-token: write   # Krävs för säker verifiering
     steps:
     - name: Hämtar kod
       uses: actions/checkout@v4
