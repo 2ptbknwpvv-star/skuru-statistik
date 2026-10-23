@@ -4,15 +4,11 @@ import pandas as pd
 import re
 from datetime import datetime
 
-# Länk till ligans huvudsida (Säsongen 2026-27)
 COMPETITION_URL = "https://profixio.com"
-
-# De exakta lagnamnen som roboten ska söka efter och skapa flikar för
 TARGET_TEAMS = ["Skuru IK 4", "Skuru IK 2", "Skuru IK 1"]
 
 async def scrape_to_excel_auto_urls():
     async with async_playwright() as p:
-        # Kör dolt i bakgrunden
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         
@@ -28,7 +24,6 @@ async def scrape_to_excel_auto_urls():
             await browser.close()
             return
 
-        # Sök efter laglänkar i systemet
         for team_name in TARGET_TEAMS:
             try:
                 team_link_locator = page.locator(f"a:has-text('{team_name}')")
@@ -46,9 +41,7 @@ async def scrape_to_excel_auto_urls():
             except Exception as e:
                 print(f"Kunde inte hitta URL för {team_name}: {e}")
 
-        # Fallback om den dynamiska sökningen misslyckas i molnmiljön
         if not resolved_teams:
-            print("\n[Varning] Använder fasta reservlänkar...")
             resolved_teams = [
                 {"namn": "Skuru IK 4", "url": "https://profixio.com/teams/1598917?k=1183572&t=schedule&f=played"},
                 {"namn": "Skuru IK 2", "url": "https://profixio.com/teams/1581327?k=1183570&t=schedule&f=played"},
@@ -64,10 +57,9 @@ async def scrape_to_excel_auto_urls():
                 await page.goto(team["url"])
                 await page.wait_for_timeout(5000)
             except Exception as e:
-                print(f"Kunde inte öppna spelschema för {team['namn']}: {e}")
+                print(f"Kunde inte öppna spelschema: {e}")
                 continue
             
-            # Identifiera alla spelade matcher ("Live Matchinfo"-knappar)
             match_buttons = await page.locator("a:has-text('Matchinfo'), button:has-text('Matchinfo'), a:has-text('Live'), button:has-text('Live')").all()
             total_matches = len(match_buttons)
             print(f"Hittade {total_matches} matcher i listan.")
@@ -82,58 +74,38 @@ async def scrape_to_excel_auto_urls():
                     
                     popup = await popup_info.value
                     await popup.wait_for_load_state()
-                    await popup.wait_for_timeout(4000)
+                    await popup.wait_for_timeout(5000)
 
-                    # Ny mer specifik söklogik för Profixios laguppställningstabeller (både tr-rader och div-block)
-                    player_elements = await popup.locator("tr:has(td), div.player-row, .game-person-row").all()
+                    # Tvinga fram ALL råtext från hela fönstret (Ctrl+A metod)
+                    full_page_text = await popup.evaluate("() => document.body.innerText")
+                    lines = full_page_text.split("\n")
                     
-                    for elem in player_elements:
-                        text = await elem.inner_text()
-                        if not text:
+                    for line in lines:
+                        line = line.strip()
+                        if not line or len(line) < 5:
                             continue
                         
-                        # Dela upp texten per rad/tabb för att hitta namn och siffror
-                        parts = [p.strip() for p in text.split("\n") if p.strip()]
-                        if len(parts) == 0:
-                            parts = [p.strip() for p in text.split("\t") if p.strip()]
+                        # Regex-filter för att plocka rader som har: [Nummer/Tomt] [Namn Namnsson] [Mål/Utvisning]
+                        # Detekterar handbollsrader som t.ex. "9 Anna Andersson 4" eller "Anna Andersson 2'"
+                        match = re.search(r'(?:\d+\s+)?([A-ZÅÄÖa-zåäö][-A-ZÅÄÖa-zåäö\s]+?)\s+(\d+)\s*$', line)
+                        if match:
+                            name = match.group(1).strip()
+                            goals = int(match.group(2))
+                            
+                            if name in ["Matchinfo", "Resultat", "Domare", "Ledare", "Spelare", "Mål", "Lag", "Period", "Slutresultat", "Hemma", "Borta"] or len(name) < 4:
+                                continue
+                            
+                            if name not in stats_master[team['namn']]:
+                                stats_master[team['namn']][name] = {"Matcher": 0, "Mål": 0, "Utvisningar": 0}
+                            
+                            stats_master[team['namn']][name]["Matcher"] += 1
+                            stats_master[team['namn']][name]["Mål"] += goals
 
-                        # Letar efter namn i textblocken
-                        name = ""
-                        for part in parts:
-                            if re.match(r'^[A-ZÅÄÖa-zåäö][-A-ZÅÄÖa-zåäö\s]+$', part) and len(part) > 3:
-                                if part not in ["Matchinfo", "Resultat", "Domare", "Ledare", "Spelare", "Mål", "Lag"]:
-                                    name = part
-                                    break
-                        
-                        if not name:
-                            continue
-
-                        # Skapa spelaren om den inte finns i vårt register
-                        if name not in stats_master[team['namn']]:
-                            stats_master[team['namn']][name] = {"Matcher": 0, "Mål": 0, "Utvisningar": 0}
-                        
-                        stats_master[team['namn']][name]["Matcher"] += 1
-                        
-                        # Sök efter mål (M) och utvisningar (2') i textsträngarna
-                        full_line = " ".join(parts)
-                        
-                        # Försök hitta mål: Letar efter mönster som "M: X" eller kollar siffror i kolumnerna
-                        goals_match = re.search(r'(?:Mål|M):\s*(\d+)', full_line, re.IGNORECASE)
-                        if goals_match:
-                            stats_master[team['namn']][name]["Mål"] += int(goals_match.group(1))
-                        else:
-                            # Sekundär koll om mål bara står som en siffra i slutet av raden
-                            digits = re.findall(r'\d+', full_line)
-                            if len(digits) >= 2: # Ofta [Tröjnummer, Mål]
-                                stats_master[team['namn']][name]["Mål"] += int(digits[1])
-
-                        # Försök hitta 2-minutersutvisningar (2')
-                        p2_match = re.search(r"(?:2'|2min):\s*(\d+)", full_line, re.IGNORECASE)
-                        if p2_match:
-                            stats_master[team['namn']][name]["Utvisningar"] += int(p2_match.group(1))
-                        elif "2'" in full_line:
-                            # Räkna antal förekomster av 2'-tecknet om det står per händelse
-                            stats_master[team['namn']][name]["Utvisningar"] += full_line.count("2'")
+                        # Sök efter utvisningar på samma rad
+                        if "2'" in line or "2-min" in line:
+                            for name_check in stats_master[team['namn']]:
+                                if name_check in line:
+                                    stats_master[team['namn']][name_check]["Utvisningar"] += line.count("2'")
 
                     await popup.close()
                     await page.wait_for_timeout(1000)
@@ -144,16 +116,14 @@ async def scrape_to_excel_auto_urls():
 
         await browser.close()
 
-        # --- Steg 3: Skapa Excel-filen med alla flikar ---
+        # --- Steg 3: Skapa Excel-filen ---
         output_file = "profixio_handbollsstatistik_auto.xlsx"
         with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
             
-            # Statusflik
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            df_status = pd.DataFrame([{"Senast uppdaterad": now_str, "Status": "Slutförd"}])
+            df_status = pd.DataFrame([{"Senast uppdaterad": now_str, "Status": "Slutförd med djupskrapning"}])
             df_status.to_excel(writer, sheet_name="Info & Status", index=False)
             
-            # Skapa flikar för lagen
             for team_name in TARGET_TEAMS:
                 players = stats_master.get(team_name, {})
                 if players:
@@ -162,13 +132,12 @@ async def scrape_to_excel_auto_urls():
                     df_team.reset_index(inplace=True)
                     df_team = df_team.sort_values(by="Mål", ascending=False)
                 else:
-                    # Skapa en tom strukturerad tabell om laget inte har hunnit få data än
                     df_team = pd.DataFrame(columns=["Spelarnamn", "Matcher", "Mål", "Utvisningar"])
                 
                 df_team.to_excel(writer, sheet_name=team_name[:31], index=False)
-                print(f"Sparade flik för: {team_name}")
+                print(f"Skapat flik för: {team_name}")
         
-        print(f"\nGenereringen är klar!")
+        print(f"\nKörningen är klar!")
 
 if __name__ == "__main__":
     asyncio.run(scrape_to_excel_auto_urls())
