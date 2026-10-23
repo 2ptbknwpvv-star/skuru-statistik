@@ -4,99 +4,134 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Skuru IK Handbollsstatistik</title>
-    <!-- Laddar in säkert Excel-bibliotek direkt i webbläsaren -->
+    <!-- Laddar Excel-biblioteket om användaren vill ladda ner filen manuellt -->
     <script src="https://jsdelivr.net"></script>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 30px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
-        h1 { color: #004b87; text-align: center; }
-        .box { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        textarea { width: 100%; height: 200px; padding: 12px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-radius; font-family: monospace; resize: vertical; }
-        select, button { padding: 12px 20px; margin-top: 15px; font-size: 16px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer; }
-        button { background-color: #008cba; color: white; border: none; font-weight: bold; width: 100%; transition: background 0.2s; }
-        button:hover { background-color: #005f7b; }
-        .status { margin-top: 15px; font-weight: bold; text-align: center; color: green; }
+        body { font-family: Arial, sans-serif; max-width: 1000px; margin: 30px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
+        h1, h2 { color: #004b87; text-align: center; }
+        .update-tag { text-align: center; font-style: italic; color: #666; margin-bottom: 20px; }
+        .box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 25px; }
+        .tabs { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; }
+        .tab-btn { padding: 10px 20px; font-size: 16px; font-weight: bold; border: 1px solid #004b87; border-radius: 4px; background: white; color: #004b87; cursor: pointer; transition: all 0.2s; }
+        .tab-btn.active, .tab-btn:hover { background: #004b87; color: white; }
+        .team-section { display: none; }
+        .team-section.active { display: block; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; background: white; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #004b87; color: white; position: sticky; top: 0; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        tr:hover { background-color: #f1f1f1; }
+        .btn-container { text-align: center; margin-top: 30px; }
+        .download-btn { background-color: #28a745; color: white; padding: 12px 25px; font-size: 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        .download-btn:hover { background-color: #218838; }
+        .no-data { text-align: center; color: #888; font-style: italic; padding: 20px; }
     </style>
 </head>
 <body>
 
-    <h1>Skuru IK - Matchdatakonverterare</h1>
-    
-    <div class="box">
-        <h3>1. Välj vilket lag matchen tillhör:</h3>
-        <select id="teamSelect">
-            <option value="Skuru IK 4">Skuru IK 4</option>
-            <option value="Skuru IK 2">Skuru IK 2</option>
-            <option value="Skuru IK 1">Skuru IK 1</option>
-        </select>
+    <h1>Skuru IK - Handbollsstatistik</h1>
+    <!-- Denna tidsstämpel uppdateras automatiskt av Python-skriptet vid varje skrapning -->
+    <div id="updateTime" class="update-tag">Laddar data...</div>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTeam('Skuru IK 1')">Skuru IK 1</button>
+        <button class="tab-btn" onclick="switchTeam('Skuru IK 2')">Skuru IK 2</button>
+        <button class="tab-btn" onclick="switchTeam('Skuru IK 4')">Skuru IK 4</button>
     </div>
 
-    <div class="box">
-        <h3>2. Klistra in rådata från Profixio:</h3>
-        <p style="font-size: 13px; color: #666;">Gå till matchens protokoll på Profixio, tryck <strong>Ctrl+A</strong> (markera allt), kopiera och klistra in här under:</p>
-        <textarea id="rawData" placeholder="Klistra in texten här..."></textarea>
-        <button onclick="processAndDownload()">Konvertera & Ladda ner Excel</button>
-        <div id="statusMessage" class="status"></div>
+    <!-- Lag 1 -->
+    <div id="Skuru IK 1" class="team-section active box">
+        <h2>Skuru IK 1</h2>
+        <div id="table-Skuru IK 1"></div>
+    </div>
+
+    <!-- Lag 2 -->
+    <div id="Skuru IK 2" class="team-section box">
+        <h2>Skuru IK 2</h2>
+        <div id="table-Skuru IK 2"></div>
+    </div>
+
+    <!-- Lag 4 -->
+    <div id="Skuru IK 4" class="team-section box">
+        <h2>Skuru IK 4</h2>
+        <div id="table-Skuru IK 4"></div>
+    </div>
+
+    <div class="btn-container box">
+        <h3>Exportera data</h3>
+        <p>Vill du spara ner statistiken lokalt? Klicka nedan för att generera en Excel-fil baserad på skärmdatan.</p>
+        <button class="download-btn" onclick="downloadExcel()">📥 Ladda ner som Excel-fil (.xlsx)</button>
     </div>
 
     <script>
-        function processAndDownload() {
-            const team = document.getElementById("teamSelect").value;
-            const text = document.getElementById("rawData").value;
-            const status = document.getElementById("statusMessage");
+        // HÄR LÄGGER ROBOTEN AUTOMATISKT IN DEN FÄRSKA DATAN VID VARJE KÖRNING
+        const statsData = {};
+        const lastUpdated = "Inte uppdaterad än";
 
-            if (!text.trim()) {
-                alert("Klistra in lite text först!");
-                return;
-            }
-
-            const lines = text.split("\n");
-            let players = [];
-
-            lines.forEach(line => {
-                line = line.trim();
-                if (line.length < 5) return;
-
-                // Letar efter rader som slutar med en siffra (mål) eller innehåller namn
-                // Fångar upp strukturer som "9 Anna Andersson 4" eller "Elin Östlund 2"
-                let match = line.match(/(?:\d+\s+)?([A-ZÅÄÖa-zåäö][-A-ZÅÄÖa-zåäö\s]+?)\s+(\d+)\s*$/);
-                if (match) {
-                    let name = match[1].trim();
-                    let goals = parseInt(match[2]);
-
-                    // Sortera bort systemord
-                    if (["Matchinfo", "Resultat", "Domare", "Ledare", "Spelare", "Mål", "Lag", "Period", "Slutresultat", "Hemma", "Borta"].includes(name) || name.length < 4) return;
-
-                    // Kolla om spelaren fick utvisning på samma rad
-                    let p2 = (line.includes("2'") || line.includes("2-min") || line.includes("Utvisning")) ? 1 : 0;
-
-                    players.push({
-                        "Spelarnamn": name,
-                        "Matcher": 1,
-                        "Mål": goals,
-                        "Utvisningar": p2
-                    });
-                }
-            });
-
-            if (players.length === 0) {
-                alert("Kunde inte hitta några spelare eller mål i texten. Kontrollera att du kopierade hela matchsidan.");
-                return;
-            }
-
-            // Bygg Excel-struktur i minnet
-            const worksheet = XLSX.utils.json_to_sheet(players);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, team.substring(0, 31));
-
-            // Skapa filnamn med dagens datum
-            const dateStr = new Date().toISOString().split('T')[0];
-            const filename = `Statistik_${team.replace(/\s+/g, '_')}_${dateStr}.xlsx`;
-
-            // Trigga direkt nedladdning till din hårddisk
-            XLSX.writeFile(workbook, filename);
-            status.innerText = `Klart! Excel-filen för ${team} har laddats ner till din dator.`;
-            document.getElementById("rawData").value = "";
+        // Funktion för att byta flik mellan lagen på skärmen
+        function switchTeam(teamName) {
+            document.querySelectorAll('.team-section').forEach(sec => sec.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            
+            document.getElementById(teamName).classList.add('active');
+            event.target.classList.add('active');
         }
+
+        // Funktion som bygger upp HTML-tabellerna dynamiskt från rådatan
+        function renderTables() {
+            document.getElementById("updateTime").innerText = `Senast uppdaterad från Profixio: ${lastUpdated}`;
+            
+            for (const teamName of ["Skuru IK 1", "Skuru IK 2", "Skuru IK 4"]) {
+                const container = document.getElementById(`table-${teamName}`);
+                const players = statsData[teamName] || [];
+                
+                if (players.length === 0) {
+                    container.innerHTML = `<p class="no-data">Ingen statistik insamlad för detta lag än. Kör skrapningen via Actions.</p>`;
+                    continue;
+                }
+                
+                let html = `<table>
+                    <thead>
+                        <tr>
+                            <th>Spelarnamn</th>
+                            <th>Spelade matcher</th>
+                            <th>Mål</th>
+                            <th>Utvisningar (2')</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+                
+                players.forEach(p => {
+                    html += `<tr>
+                        <td><strong>${p.Spelarnamn}</strong></td>
+                        <td>${p.Matcher}</td>
+                        <td>${p.Mål}</td>
+                        <td>${p.Utvisningar}</td>
+                    </tr>`;
+                });
+                
+                html += `</tbody></table>`;
+                container.innerHTML = html;
+            }
+        }
+
+        // Fallback-funktion för att ladda ner till Excel om användaren vill ha filen offline
+        function downloadExcel() {
+            const workbook = XLSX.utils.book_new();
+            const statusWS = XLSX.utils.json_to_sheet([{"Senast uppdaterad": lastUpdated, "Status": "OK"}]);
+            XLSX.utils.book_append_sheet(workbook, statusWS, "Info & Status");
+            
+            for (const [teamName, players] of Object.entries(statsData)) {
+                if (players.length > 0) {
+                    const ws = XLSX.utils.json_to_sheet(players);
+                    XLSX.utils.book_append_sheet(workbook, ws, teamName);
+                }
+            }
+            XLSX.writeFile(workbook, "Skuru_Handbollsstatistik.xlsx");
+        }
+
+        // Kör renderingen direkt när sidan laddas
+        renderTables();
     </script>
 </body>
 </html>
