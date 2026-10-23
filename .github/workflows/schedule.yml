@@ -10,11 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pages: write      # Lägger till rättighet att skriva till hemsidan
-      id-token: write   # Krävs för att verifiera publiceringen
+      pages: write      
+      id-token: write   
     steps:
     - name: Hämtar kod
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # Hämtar hela historiken så att vi kan spara ändringar
 
     - name: Startar Python
       uses: actions/setup-python@v5
@@ -28,6 +30,14 @@ jobs:
 
     - name: Kör skrapningen och uppdatera HTML
       run: python scraper.py
+
+    - name: Spara ändringarna i kodarkivet (Commit & Push)
+      run: |
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "actions@github.com"
+        git add index.html
+        # Sparar bara om filen faktiskt har ändrats (dvs. ny data hittades)
+        git diff-index --quiet HEAD || (git commit -m "Automatisk statistikuppdatering" && git push)
 
     - name: Konfigurera och ladda upp hemsidan direkt
       uses: actions/upload-pages-artifact@v3
