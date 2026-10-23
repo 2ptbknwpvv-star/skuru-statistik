@@ -1,0 +1,33 @@
+name: Automatisk Handbollsskrapning
+
+on:
+  schedule:
+    # Körs varje söndag kl. 20:00 UTC (vilket blir kl. 21:00 svensk tid på vintern)
+    - cron: '0 20 * * 7'
+  workflow_dispatch: # Gör att du även kan starta skrapningen manuellt med en knapp!
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Hämtar kod
+      uses: actions/checkout@v4
+
+    - name: Startar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Installerar Playwright och Excel-verktyg
+      run: |
+        pip install playwright pandas openpyxl
+        playwright install chromium
+
+    - name: Kör skrapningen av Profixio
+      run: python scraper.py
+
+    - name: Spara Excel-filen i molnet
+      uses: actions/upload-artifact@v4
+      with:
+        name: Handbollsstatistik-Skuru
+        path: profixio_handbollsstatistik_auto.xlsx
