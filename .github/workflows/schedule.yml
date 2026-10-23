@@ -2,9 +2,8 @@ name: Automatisk Handbollsskrapning
 
 on:
   schedule:
-    # Körs varje söndag kl. 20:00 UTC (vilket blir kl. 21:00 svensk tid på vintern)
-    - cron: '0 20 * * 7'
-  workflow_dispatch: # Gör att du även kan starta skrapningen manuellt med en knapp!
+    - cron: '0 20 * * 0'
+  workflow_dispatch:
 
 jobs:
   scrape:
