@@ -9,12 +9,12 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Krävs för att kunna spara i ditt kodarkiv
+      contents: read
+      pages: write      # Ger rättighet att uppdatera hemsidan live
+      id-token: write   # Krävs för modern publicering
     steps:
     - name: Hämtar kod
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0 
 
     - name: Startar Python
       uses: actions/setup-python@v5
@@ -29,9 +29,10 @@ jobs:
     - name: Kör skrapningen och uppdatera HTML
       run: python scraper.py
 
-    - name: Spara ändringarna i kodarkivet (Commit & Push)
-      run: |
-        git config --global user.name "GitHub Actions Bot"
-        git config --global user.email "actions@github.com"
-        git add index.html
-        git diff-index --quiet HEAD || (git commit -m "Automatisk statistikuppdatering" && git push)
+    - name: Paketera hemsidan för publicering
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: '.'
+
+    - name: Publicera hemsidan live på nätet
+      uses: actions/deploy-pages@v4
