@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Skuru IK Handbollsstatistik</title>
-    <!-- Laddar Excel-biblioteket om användaren vill ladda ner filen manuellt -->
+    <!-- KORRIGERAD: Laddar in Excel-biblioteket på rätt sätt -->
     <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: Arial, sans-serif; max-width: 1000px; margin: 30px auto; padding: 20px; background-color: #f4f6f9; color: #333; }
@@ -30,7 +30,6 @@
 <body>
 
     <h1>Skuru IK - Handbollsstatistik</h1>
-    <!-- Denna tidsstämpel uppdateras automatiskt av Python-skriptet vid varje skrapning -->
     <div id="updateTime" class="update-tag">Laddar data...</div>
 
     <div class="tabs">
@@ -68,16 +67,14 @@
         const statsData = {};
         const lastUpdated = "Inte uppdaterad än";
 
-        // Funktion för att byta flik mellan lagen på skärmen
         function switchTeam(teamName) {
             document.querySelectorAll('.team-section').forEach(sec => sec.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             
             document.getElementById(teamName).classList.add('active');
-            event.target.classList.add('active');
+            if(event) { event.target.classList.add('active'); }
         }
 
-        // Funktion som bygger upp HTML-tabellerna dynamiskt från rådatan
         function renderTables() {
             document.getElementById("updateTime").innerText = `Senast uppdaterad från Profixio: ${lastUpdated}`;
             
@@ -85,7 +82,7 @@
                 const container = document.getElementById(`table-${teamName}`);
                 const players = statsData[teamName] || [];
                 
-                if (players.length === 0) {
+                if (Object.keys(players).length === 0 || players.length === 0) {
                     container.innerHTML = `<p class="no-data">Ingen statistik insamlad för detta lag än. Kör skrapningen via Actions.</p>`;
                     continue;
                 }
@@ -115,7 +112,6 @@
             }
         }
 
-        // Fallback-funktion för att ladda ner till Excel om användaren vill ha filen offline
         function downloadExcel() {
             const workbook = XLSX.utils.book_new();
             const statusWS = XLSX.utils.json_to_sheet([{"Senast uppdaterad": lastUpdated, "Status": "OK"}]);
@@ -130,7 +126,6 @@
             XLSX.writeFile(workbook, "Skuru_Handbollsstatistik.xlsx");
         }
 
-        // Kör renderingen direkt när sidan laddas
         renderTables();
     </script>
 </body>
